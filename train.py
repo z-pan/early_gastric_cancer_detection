@@ -18,6 +18,7 @@ Usage::
 """
 
 import argparse
+import json
 import math
 import random
 import sys
@@ -750,6 +751,59 @@ def main() -> None:
             fold_results.append(result)
 
     _print_summary(fold_results)
+    _save_results(fold_results, args, out_root)
+
+
+def _save_results(
+    fold_results: List[Dict],
+    args: argparse.Namespace,
+    out_root: Path,
+) -> None:
+    """Persist cross-fold metrics to ``{out_root}/results.json``.
+
+    The file is self-contained: it records the full experiment config
+    (``args``), raw per-fold metrics, and pre-computed summary statistics
+    (mean ± std over folds) so that :mod:`scripts.collect_results` can
+    build the ablation table without re-running anything.
+
+    Schema::
+
+        {
+          "args":         { <all CLI args> },
+          "fold_results": [ { fold, best_epoch, best_val_dice,
+                              val_dice, val_iou, val_sensitivity,
+                              val_specificity, val_precision, val_loss },
+                            ... ],
+          "summary":      { "dice_mean":  float, "dice_std":  float,
+                            "iou_mean":   float, "iou_std":   float,
+                            "sens_mean":  float, "sens_std":  float,
+                            "spec_mean":  float, "spec_std":  float,
+                            "prec_mean":  float, "prec_std":  float }
+        }
+    """
+    metric_keys = (
+        ('best_val_dice', 'dice'),
+        ('val_iou',        'iou'),
+        ('val_sensitivity','sens'),
+        ('val_specificity','spec'),
+        ('val_precision',  'prec'),
+    )
+    summary: Dict[str, float] = {}
+    for src_key, short in metric_keys:
+        vals = [r[src_key] for r in fold_results]
+        summary[f'{short}_mean'] = float(np.mean(vals))
+        summary[f'{short}_std']  = float(np.std(vals))
+
+    payload = {
+        'args':         vars(args),
+        'fold_results': fold_results,
+        'summary':      summary,
+    }
+
+    out_path = out_root / 'results.json'
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        json.dump(payload, fh, indent=2)
+    print(f"  Results saved → {out_path}")
 
 
 if __name__ == '__main__':
