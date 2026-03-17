@@ -1,0 +1,13 @@
+output/
+raw_data/
+processed_data/
+dummy_data/
+__pycache__/
+*.pth
+.venv/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.DS_Store

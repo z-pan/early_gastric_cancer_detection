@@ -1,0 +1,10 @@
+torch>=2.0
+torchvision
+albumentations
+segment-anything
+opencv-python
+scikit-learn
+tensorboard
+numpy
+Pillow
+timm
