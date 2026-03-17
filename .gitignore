@@ -1,4 +1,6 @@
 output/
+raw_data/
+processed_data/
 __pycache__/
 *.pth
 .venv/
