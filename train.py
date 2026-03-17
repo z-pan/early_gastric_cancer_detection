@@ -303,14 +303,15 @@ class _AverageMeter:
 
 
 def train_one_epoch(
-    model:     nn.Module,
-    loader:    DataLoader,
-    criterion: DSCMFNetLoss,
-    optimizer: torch.optim.Optimizer,
-    scaler:    GradScaler,
-    device:    torch.device,
+    model:      nn.Module,
+    loader:     DataLoader,
+    criterion:  DSCMFNetLoss,
+    optimizer:  torch.optim.Optimizer,
+    scaler:     GradScaler,
+    device:     torch.device,
     model_type: str,
-    amp:       bool,
+    amp:        bool,
+    lambda_wli: float = 0.0,
 ) -> Dict[str, float]:
     """Run one full training epoch.
 
@@ -323,6 +324,9 @@ def train_one_epoch(
         device:     Computation device.
         model_type: Model type key for :func:`model_forward`.
         amp:        Whether to use mixed precision.
+        lambda_wli: Auxiliary WLI-mask structure-loss weight (ablation #9).
+                    Active only when the batch contains ``'wli_mask'``
+                    (Phase 2 cross-scale loader).  0.0 disables it.
 
     Returns:
         Dict with key ``'loss'`` (epoch-average training loss).
@@ -343,6 +347,12 @@ def train_one_epoch(
         with autocast(device_type=device.type, enabled=amp):
             seg, bdy, ds = model_forward(model, wli, nbi, model_type)
             loss = criterion(seg, bdy, ds, mask)
+            # Ablation #9: auxiliary WLI-mask supervision (Phase 2 only).
+            # Adds a structure loss on seg against the WLI distant mask so the
+            # model must also detect the lesion in the wider-FOV WLI stream.
+            if lambda_wli > 0.0 and 'wli_mask' in batch:
+                wli_mask = batch['wli_mask'].to(device, non_blocking=True)
+                loss = loss + lambda_wli * criterion.structure(seg, wli_mask)
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -357,12 +367,13 @@ def train_one_epoch(
 
 @torch.no_grad()
 def validate(
-    model:     nn.Module,
-    loader:    DataLoader,
-    criterion: DSCMFNetLoss,
-    device:    torch.device,
+    model:      nn.Module,
+    loader:     DataLoader,
+    criterion:  DSCMFNetLoss,
+    device:     torch.device,
     model_type: str,
-    amp:       bool,
+    amp:        bool,
+    lambda_wli: float = 0.0,
 ) -> Dict[str, float]:
     """Run one full validation epoch and return loss + metrics.
 
@@ -373,6 +384,8 @@ def validate(
         device:     Computation device.
         model_type: Model type key.
         amp:        Whether to use mixed precision.
+        lambda_wli: Mirror of the training-time WLI aux-loss weight so that
+                    reported validation loss matches the training objective.
 
     Returns:
         Dict with keys ``'loss'``, ``'dice'``, ``'iou'``, ``'sensitivity'``,
@@ -393,6 +406,9 @@ def validate(
         with autocast(device_type=device.type, enabled=amp):
             seg, bdy, ds = model_forward(model, wli, nbi, model_type)
             loss = criterion(seg, bdy, ds, mask)
+            if lambda_wli > 0.0 and 'wli_mask' in batch:
+                wli_mask = batch['wli_mask'].to(device, non_blocking=True)
+                loss = loss + lambda_wli * criterion.structure(seg, wli_mask)
 
         m = compute_metrics(torch.sigmoid(seg), mask)
         n = wli.size(0)
@@ -471,10 +487,11 @@ def train_fold(
     for epoch in range(args.epochs):
         train_stats = train_one_epoch(
             model, train_loader, criterion, optimizer, scaler,
-            device, args.model, use_amp,
+            device, args.model, use_amp, args.lambda_wli,
         )
         val_stats = validate(
             model, val_loader, criterion, device, args.model, use_amp,
+            args.lambda_wli,
         )
         scheduler.step()
 
@@ -652,6 +669,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--freeze_stages',type=int,   default=2)
     p.add_argument('--lambda_bdy',   type=float, default=0.5)
     p.add_argument('--alpha_ds',     type=float, default=0.3)
+    p.add_argument('--lambda_wli',   type=float, default=0.0,
+                   help='WLI auxiliary mask loss weight for Phase 2 (ablation #9). '
+                        '0.0 = disabled.')
     p.add_argument('--amp',          action='store_true',
                    help='Enable mixed-precision training (requires CUDA)')
 
