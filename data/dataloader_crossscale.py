@@ -36,7 +36,9 @@ from albumentations.pytorch import ToTensorV2
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, Dataset
 
-from data.dataloader import IMAGENET_MEAN, IMAGENET_STD
+# Standard ImageNet normalisation constants (same as data/dataloader.py)
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD  = (0.229, 0.224, 0.225)
 
 # --------------------------------------------------------------------------- #
 # Constants                                                                   #
