@@ -126,13 +126,20 @@ def compute_metrics(
 # 3.  Model factory                                                           #
 # --------------------------------------------------------------------------- #
 
-def build_model(model_type: str, pretrained: bool = True) -> nn.Module:
+def build_model(
+    model_type: str,
+    pretrained: bool = True,
+    fusion_mode: str = 'concat',
+) -> nn.Module:
     """Instantiate the requested model variant.
 
     Args:
-        model_type: One of ``'nbi_only'``, ``'wli_only'``,
-                    ``'early_fusion'``, ``'dscmfnet'``.
-        pretrained: Load ImageNet-pretrained encoder weights.
+        model_type:  One of ``'nbi_only'``, ``'wli_only'``,
+                     ``'early_fusion'``, ``'dscmfnet'``.
+        pretrained:  Load ImageNet-pretrained encoder weights.
+        fusion_mode: DSCMFNet-only — one of ``'concat'``, ``'cmfim'``,
+                     ``'cmfim_no_sam'``, ``'cmfim_no_boundary'``.
+                     Ignored for non-DSCMFNet models.
 
     Returns:
         Initialised :class:`torch.nn.Module`.
@@ -141,7 +148,8 @@ def build_model(model_type: str, pretrained: bool = True) -> nn.Module:
         'nbi_only':     lambda: SingleStreamResNet34(pretrained=pretrained),
         'wli_only':     lambda: SingleStreamPVTv2(pretrained=pretrained),
         'early_fusion': lambda: EarlyFusionPVTv2(pretrained=pretrained),
-        'dscmfnet':     lambda: DSCMFNet(pretrained=pretrained),
+        'dscmfnet':     lambda: DSCMFNet(pretrained=pretrained,
+                                         fusion_mode=fusion_mode),
     }
     if model_type not in _map:
         raise ValueError(f"Unknown model type: {model_type!r}. "
@@ -418,7 +426,11 @@ def train_fold(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- Model ----------------------------------------------------------- #
-    model = build_model(args.model, pretrained=args.pretrained).to(device)
+    model = build_model(
+        args.model,
+        pretrained=args.pretrained,
+        fusion_mode=args.fusion_mode,
+    ).to(device)
     freeze_encoder_stages(model, args.freeze_stages)
 
     param_info = count_parameters(model)
@@ -653,6 +665,9 @@ def parse_args() -> argparse.Namespace:
     # Model
     p.add_argument('--model',        default='dscmfnet',
                    choices=['nbi_only', 'wli_only', 'early_fusion', 'dscmfnet'])
+    p.add_argument('--fusion_mode',  default='concat',
+                   choices=['concat', 'cmfim', 'cmfim_no_sam', 'cmfim_no_boundary'],
+                   help='DSCMFNet fusion strategy (ignored for non-dscmfnet models)')
     p.add_argument('--pretrained',   action=argparse.BooleanOptionalAction,
                    default=True,
                    help='Use ImageNet-pretrained encoder weights')
@@ -683,6 +698,7 @@ def main() -> None:
 
     print(f"\nDSCMFNet training")
     print(f"  model       : {args.model}")
+    print(f"  fusion_mode : {args.fusion_mode}")
     print(f"  phase       : {args.phase}")
     print(f"  device      : {args.device}")
     print(f"  epochs      : {args.epochs}")

@@ -6,6 +6,8 @@ EGC lesions where standard BCE diverges due to the high background fraction.
 Reference loss formulation: CLAUDE.md §Loss Function
 """
 
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -129,7 +131,7 @@ class DSCMFNetLoss(nn.Module):
     def forward(
         self,
         seg_pred: torch.Tensor,
-        bdy_pred: torch.Tensor,
+        bdy_pred: Optional[torch.Tensor],
         ds_preds: list,
         mask:     torch.Tensor,
     ) -> torch.Tensor:
@@ -137,16 +139,19 @@ class DSCMFNetLoss(nn.Module):
 
         Args:
             seg_pred: Main segmentation logits ``(B, 1, H, W)``.
-            bdy_pred: Boundary branch logits   ``(B, 1, H, W)``.
+            bdy_pred: Boundary branch logits ``(B, 1, H, W)``, or ``None``
+                      when ``fusion_mode='cmfim_no_boundary'`` — boundary
+                      loss is skipped in that case.
             ds_preds: 3-element list of auxiliary logits
                       ``[ds_h4, ds_h8, ds_h16]`` at H/4, H/8, H/16.
-            mask:     Binary GT mask             ``(B, 1, H, W)``.
+            mask:     Binary GT mask ``(B, 1, H, W)``.
 
         Returns:
             Scalar total loss.
         """
         loss = self.structure(seg_pred, mask)
-        loss = loss + self.lambda_bdy * self.boundary(bdy_pred, mask)
+        if bdy_pred is not None:
+            loss = loss + self.lambda_bdy * self.boundary(bdy_pred, mask)
 
         ds_loss = sum(
             w * self.structure(d, mask)
