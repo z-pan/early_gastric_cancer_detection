@@ -333,7 +333,10 @@ def train_one_epoch(
     for batch in loader:
         wli  = batch['wli' ].to(device, non_blocking=True)
         nbi  = batch['nbi' ].to(device, non_blocking=True)
-        mask = batch['mask'].to(device, non_blocking=True)
+        # Phase 2 batches carry 'nbi_mask'+'wli_mask'; Phase 1 carries 'mask'.
+        # Primary GT is always the NBI annotation (diagnostic reference for EGC).
+        mask = (batch['nbi_mask'] if 'nbi_mask' in batch
+                else batch['mask']).to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
 
@@ -384,7 +387,8 @@ def validate(
     for batch in loader:
         wli  = batch['wli' ].to(device, non_blocking=True)
         nbi  = batch['nbi' ].to(device, non_blocking=True)
-        mask = batch['mask'].to(device, non_blocking=True)
+        mask = (batch['nbi_mask'] if 'nbi_mask' in batch
+                else batch['mask']).to(device, non_blocking=True)
 
         with autocast(device_type=device.type, enabled=amp):
             seg, bdy, ds = model_forward(model, wli, nbi, model_type)
